@@ -1,29 +1,14 @@
 #!/usr/bin/env python3
 
-# Copyright 2015 The Kubernetes Authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-import subprocess
-
 from charms.apt import queue_install
-from charms.reactive import when, when_not, set_state
-from charms.reactive import data_changed
+from charms.reactive import when, when_not, set_state, remove_state
+from charms.reactive.helpers import data_changed
 from charmhelpers.core import hookenv
-from charmhelpers.core import unitdata
-from charmhelpers.contrib.charmsupport import nrpe
 
 from charms.layer import haproxy
+
+# The file in the templates directory to render when writing the haproxy.cfg.
+TEMPLATE_NAME = 'haproxy.cfg'
 
 
 @when_not('apt.installed.haproxy')
@@ -32,40 +17,65 @@ def install_haproxy():
 
 
 @when('apt.installed.haproxy')
+def application_version_set():
+    """Get the version of software deployed on this system."""
+    hookenv.application_version_set(haproxy.get_version())
+
+
+@when('apt.installed.haproxy')
 @when_not('haproxy.enabled')
 def enable():
     """Ensure the software starts automatically on this system."""
-    enable_haproxy()
+    haproxy.enable()
     set_state('haproxy.enabled')
 
 
 @when('apt.installed.haproxy')
-def set_application_version():
-    """Get the version of software deployed to the system."""
-    version_string = subprocess.check_output(['haproxy', '-v'])
-    version_array = version_string.split(b' ')
-    if len(version_array) > 2:
-        hookenv.application_version_set(version_array[2])
+def status_update():
+    """Report the status of the haproxy service."""
+    enabled = 'disabled'
+    if haproxy.is_enabled():
+        enabled = 'enabled'
+    else:
+        remove_state('haproxy.enabled')
+    active = 'inactive'
+    if haproxy.is_active():
+        active = 'active'
+        set_state('haproxy.active')
+    else:
+        remove_state('haproxy.active')
+    message = 'HAProxy is {} and {}'.format(enabled, active)
+    hookenv.status_set('active', message)
 
 
 @when('haproxy.enabled', 'reverseproxy.available')
-def update_reverseproxy_config(reverseproxy):
-    """Get all the services and update the configuration to point to them."""
+def configure_reverseproxy(reverseproxy):
+    """Get all the services and update the configuration with each host."""
     services = reverseproxy.services()
-    if data_changed('reverseproxy.services', services)
+    # only when the services data changes we need to configure a new template.
+    if data_changed('reverseproxy.services', services):
+        # Replace slashes in unit name with dash for a configuration safe name.
+        unit_name = hookenv.local_unit().replace('/', '-')
+        hookenv.log('{} is a reverse proxy.'.format(unit_name))
         for service in services:
-            hookenv.log('{} has a unit {}:{}'.format(services['service_name'],
-                                                     host['hostname'],
-                                                     host['port']))
+            hosts = service['hosts']
+            for host in hosts:
+                hookenv.log('{} has a unit {}:{}'.format(
+                    service['service_name'],
+                    host['hostname'],
+                    host['port']))
+        # Render a haproxy config template with services from this relation.
+        haproxy.configure(unit_name, haproxy.TEMPLATE_NAME, services=services)
 
-        haproxy.configure('haproxy.cfg',
-                          services=services,
-                          port=hookenv.config('port'))
+
+@when('config.changed.port')
+def configure_port():
+    """The port has changed, close old port and open a new one."""
+    hookenv.close_port(hookenv.config().previous('port'))
+    hookenv.open_port(hookenv.config('port'))
 
 
-def enable_haproxy():
-    """Enable the haproxy service at boot time."""
-    # Systemd services can be enabled using the systemctl command.
-    return_code = subprocess.call(['systemctl', 'enable', 'haproxy'])
-    if return_code != 0:
-        hookenv.log('Enabling haproxy failed {}.'.format(return_code))
+@when('website.available')
+def configure_website(website):
+    """Implement the provides website contract by sending configured port."""
+    website.configure(port=hookenv.config('port'))

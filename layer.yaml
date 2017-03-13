@@ -1,5 +1,5 @@
 repo: https://github.com/juju-solutions/layer-haproxy-core.git
 includes:
+ - 'layer:basic'
  - 'layer:apt'
- - 'layer:tls-client'
  - 'interface:http'
