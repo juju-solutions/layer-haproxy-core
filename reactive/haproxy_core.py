@@ -13,6 +13,7 @@ TEMPLATE_NAME = 'haproxy.cfg'
 
 @when_not('apt.installed.haproxy')
 def install_haproxy():
+    """Install haproxy and any other required software for this layer."""
     queue_install(['haproxy'])
 
 
@@ -52,8 +53,11 @@ def status_update():
 def configure_reverseproxy(reverseproxy):
     """Get all the services and update the configuration with each host."""
     services = reverseproxy.services()
-    # only when the services data changes we need to configure a new template.
-    if data_changed('reverseproxy.services', services):
+    relation_changed = data_changed('reverseproxy', services)
+    config_changed = data_changed('config', hookenv.config())
+    # Only when the relation or config data changes, render a new template.
+    if relation_changed or config_changed:
+        hookenv.log('The relation or configuration data has changed.')
         # Replace slashes in unit name with dash for a configuration safe name.
         unit_name = hookenv.local_unit().replace('/', '-')
         hookenv.log('{} is a reverse proxy.'.format(unit_name))
@@ -71,7 +75,9 @@ def configure_reverseproxy(reverseproxy):
 @when('config.changed.port')
 def configure_port():
     """The port has changed, close old port and open a new one."""
-    hookenv.close_port(hookenv.config().previous('port'))
+    previous_port = hookenv.config().previous('port')
+    if previous_port:
+        hookenv.close_port(previous_port)
     hookenv.open_port(hookenv.config('port'))
 
 

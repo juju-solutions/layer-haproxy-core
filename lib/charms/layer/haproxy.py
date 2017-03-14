@@ -49,6 +49,7 @@ def configure(name, template, **kwargs):
 
 def enable():
     """Enable the haproxy service so it starts at boot time."""
+    # The haproxy package should be enabled by default, but make sure.
     hookenv.log('Enabling the {} service with systemctl'.format(SERVICE_NAME))
     # Systemd services can be enabled using the systemctl command.
     return_code = subprocess.call(['systemctl', 'enable', 'haproxy'])
