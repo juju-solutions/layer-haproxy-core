@@ -45,7 +45,7 @@ def status_update():
         set_state('haproxy.active')
     else:
         remove_state('haproxy.active')
-    message = 'HAProxy is {} and {}'.format(enabled, active)
+    message = 'HAProxy is {} and {}.'.format(enabled, active)
     hookenv.status_set('active', message)
 
 

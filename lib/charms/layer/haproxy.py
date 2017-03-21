@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 
 from charmhelpers.core import hookenv
@@ -45,6 +46,30 @@ def configure(name, template, **kwargs):
                                                   ETC_HAPROXY_CONFIG))
     # Reload the haproxy service to get the configuration changes.
     reload()
+
+
+def create_pem(key_path, cert_path, ca_path, pem_path):
+    """HAProxy uses PEM files for the SSL certficiates. A single PEM file can
+    contain a number of certificates, and a key in a single file. The key and
+    certificate parameters should be valid paths to an existing file, the
+    pem file will be created as a result of running this method."""
+    # The key is already in PEM format so copy the key file.
+    shutil.copy2(key_path, pem_path)
+    ca_data = ''
+    # Does the optional CA certificate file exist?
+    if os.path.isfile(ca_path):
+        # The CA is also in PEM format, so no conversion is necessary.
+        with open(ca_path) as reader:
+            ca_data = reader.read()
+    # Creat a command to convert the certificate to PEM format.
+    convert_cert = ['openssl', 'x509', '-in', cert_path]
+    # Open the PEM file in append mode.
+    with open(pem_path, 'a') as appender:
+        # Append the certificate in PEM format to the end of the PEM file.
+        subprocess.check_call(convert_cert, stdout=appender)
+        # Append the CA certificate data if there is any.
+        if ca_data:
+            appender.write(ca_data)
 
 
 def enable():
